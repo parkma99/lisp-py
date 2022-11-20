@@ -82,7 +82,14 @@ def tokenize(source):
         source (str): a string containing the source code of a Scheme
                       expression
     """
-    raise NotImplementedError
+    lines = []
+    for line in source.splitlines():
+        if ';' in line:
+            end = line.find(';')
+            lines.append(line[:end])
+        else:
+            lines.append(line)
+    return ' '.join(lines).replace('(', ' ( ').replace(')', ' ) ').split()
 
 
 def parse(tokens):
@@ -95,17 +102,50 @@ def parse(tokens):
     Arguments:
         tokens (list): a list of strings representing tokens
     """
-    raise NotImplementedError
+    def parse_expression(index):
+        token = tokens[index]
+        if token == '(':
+            next_index = index + 1
+            expressions = []
+
+            while next_index < len(tokens) and tokens[next_index] != ')':
+                expression, next_index = parse_expression(next_index)
+                expressions.append(expression)
+            if next_index >= len(tokens):
+                raise SchemeSyntaxError
+            return expressions, next_index + 1
+        elif token == ')':
+            raise SchemeSyntaxError
+        else:
+            expression = number_or_symbol(token)
+            return expression, index + 1
+    parsed_expression, next_index = parse_expression(0)
+    if next_index != len(tokens):
+        raise SchemeSyntaxError
+    return parsed_expression
 
 
 ######################
 # Built-in Functions #
 ######################
 
+def mult(args):
+    ans = 1
+    for item in args:
+        ans *= item
+    return ans
+def div(args):
+    if len(args) == 0:
+        raise SchemeEvaluationError
+    if len(args) == 1:
+        return 1/ args[0]
+    return args[0]/ mult(args[1:])
 
 scheme_builtins = {
     "+": sum,
     "-": lambda args: -args[0] if len(args) == 1 else (args[0] - sum(args[1:])),
+    "*": mult,
+    "/": div
 }
 
 
@@ -123,7 +163,17 @@ def evaluate(tree):
         tree (type varies): a fully parsed expression, as the output from the
                             parse function
     """
-    raise NotImplementedError
+    if isinstance(tree, str):
+        if tree in scheme_builtins.keys():
+            return scheme_builtins[tree]
+    if not isinstance(tree, list):
+        return tree
+    op, rest = tree[0], tree[1:]
+    func = evaluate(op)
+    if not hasattr(func, '__call__'):
+        raise SchemeEvaluationError
+    args = [evaluate(arg) for arg in rest]
+    return func(args)
 
 
 ########
