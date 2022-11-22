@@ -154,7 +154,27 @@ scheme_builtins = {
 ##############
 
 
-def evaluate(tree):
+class Frame:
+    def __init__(self, parent=None) -> None:
+        self.map = {}
+        self.parent = parent
+    
+    def add(self, key, value):
+        self.map[key] = value
+    
+    def get(self, key):
+        if key in self.map:
+            return self.map[key]
+        if self.parent is None:
+            return None
+        return self.parent.get(key)
+
+init_frame = Frame()
+for k, v in scheme_builtins.items():
+    init_frame.add(k, v)
+empty_frame = Frame(init_frame)
+
+def evaluate(tree, frame=empty_frame):
     """
     Evaluate the given syntax tree according to the rules of the Scheme
     language.
@@ -164,24 +184,38 @@ def evaluate(tree):
                             parse function
     """
     if isinstance(tree, str):
-        if tree in scheme_builtins.keys():
-            return scheme_builtins[tree]
+        value = frame.get(tree)
+        if value is None:
+            raise SchemeNameError
+        return value
     if not isinstance(tree, list):
         return tree
     op, rest = tree[0], tree[1:]
-    func = evaluate(op)
+    if op == 'define':
+        if len(rest) != 2:
+            raise SchemeEvaluationError
+        name = rest[0]
+        expr = evaluate(rest[1], frame)
+        frame.add(name, expr)
+        return expr
+    func = evaluate(op, frame)
     if not hasattr(func, '__call__'):
         raise SchemeEvaluationError
-    args = [evaluate(arg) for arg in rest]
+    args = [evaluate(arg, frame) for arg in rest]
     return func(args)
 
+def result_and_frame(tree, frame=None):
+    if frame is None:
+        frame = Frame(init_frame)
+    value = evaluate(tree, frame)
+    return value, frame
 
 ########
 # REPL #
 ########
 
-
 def repl(raise_all=False):
+    global_frame = None
     while True:
         # read the input.  pressing ctrl+d exits, as does typing "EXIT" at the
         # prompt.  pressing ctrl+c moves on to the next prompt, ignoring
@@ -200,10 +234,19 @@ def repl(raise_all=False):
             continue
 
         try:
-            # tokenize and parse the input, then evaluate and print the result
+            # tokenize and parse the input
             tokens = tokenize(inp)
             ast = parse(tokens)
-            print("  out> ", evaluate(ast))
+            # if global_frame has not been set, we want to call
+            # result_and_frame without it (which will give us our new frame).
+            # if it has been set, though, we want to provide that value
+            # explicitly.
+            args = [ast]
+            if global_frame is not None:
+                args.append(global_frame)
+            result, global_frame = result_and_frame(*args)
+            # finally, print the result
+            print("  out> ", result)
         except SchemeError as e:
             # if raise_all was given as True, then we want to raise the
             # exception so we see a full traceback.  if not, just print some
@@ -215,7 +258,6 @@ def repl(raise_all=False):
             print(f"{e.__class__.__name__}:", *e.args)
         print()
 
-
 if __name__ == "__main__":
     # code in this block will only be executed if lab.py is the main file being
     # run (not when this module is imported)
@@ -223,4 +265,4 @@ if __name__ == "__main__":
     # uncommenting the following line will run doctests from above
     # doctest.testmod()
 
-    repl()
+    repl(True)
