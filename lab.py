@@ -103,6 +103,7 @@ def parse(tokens):
         tokens (list): a list of strings representing tokens
     """
     def parse_expression(index):
+
         token = tokens[index]
         if token == '(':
             next_index = index + 1
@@ -153,7 +154,6 @@ scheme_builtins = {
 # Evaluation #
 ##############
 
-
 class Frame:
     def __init__(self, parent=None) -> None:
         self.map = {}
@@ -172,9 +172,25 @@ class Frame:
 init_frame = Frame()
 for k, v in scheme_builtins.items():
     init_frame.add(k, v)
-empty_frame = Frame(init_frame)
 
-def evaluate(tree, frame=empty_frame):
+
+class Functions:
+    def __init__(self, parameters, body, frame) -> None:
+        self.body = body
+        self.parameters = parameters
+        self.frame = frame
+    def __call__(self, args):
+        if len(args) != len(self.parameters):
+            raise SchemeEvaluationError
+        
+        function_frame = Frame(self.frame)
+        for key, value in zip(self.parameters, args):
+            function_frame.add(key, value)
+        return evaluate(self.body, function_frame)
+    def __repr__(self) -> str:
+        return "function object"
+        
+def evaluate(tree, frame=None):
     """
     Evaluate the given syntax tree according to the rules of the Scheme
     language.
@@ -183,6 +199,8 @@ def evaluate(tree, frame=empty_frame):
         tree (type varies): a fully parsed expression, as the output from the
                             parse function
     """
+    if frame is None:
+        frame = Frame(init_frame)
     if isinstance(tree, str):
         value = frame.get(tree)
         if value is None:
@@ -195,9 +213,22 @@ def evaluate(tree, frame=empty_frame):
         if len(rest) != 2:
             raise SchemeEvaluationError
         name = rest[0]
+        if isinstance(name, list):
+            key = name[0]
+            parameters = name[1:]
+            body = rest[1]
+            expr = Functions(parameters, body, frame)
+            frame.add(key, expr)
+            return expr
         expr = evaluate(rest[1], frame)
         frame.add(name, expr)
         return expr
+    if op == 'lambda':
+        if len(rest) != 2:
+            raise SchemeEvaluationError
+        parameters = rest[0]
+        body = rest[1]
+        return Functions(parameters, body, frame)
     func = evaluate(op, frame)
     if not hasattr(func, '__call__'):
         raise SchemeEvaluationError
