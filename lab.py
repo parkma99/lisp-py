@@ -74,6 +74,8 @@ def number_or_symbol(x):
                 return True
             if x == "#f":
                 return False
+            if x == "nil":
+                return Nil()
             return x
 
 
@@ -134,11 +136,36 @@ def parse(tokens):
 # Built-in Functions #
 ######################
 
+class Pair:
+    def __init__(self, car, cdr):
+        self.car = car
+        self.cdr = cdr
+
+    # def __str__(self) -> str:
+    #     return str(self.car) + str(self.cdr)
+
+    # def __repr__(self) -> str:
+    #     return str(self.car) + str(self.cdr)
+
+
+class Nil:
+    def __init__(self) -> None:
+        pass
+
+    def __eq__(self, o: object) -> bool:
+        return isinstance(o, Nil)
+
+    def __str__(self) -> str:
+        return ""
+
+
 def mult(args):
     ans = 1
     for item in args:
         ans *= item
     return ans
+
+
 def div(args):
     if len(args) == 0:
         raise SchemeEvaluationError
@@ -186,6 +213,107 @@ def not_func(args):
     return True
 
 
+def cons_func(args):
+    if len(args) != 2:
+        raise SchemeEvaluationError
+    return Pair(args[0], args[1])
+
+
+def car_func(args):
+    if len(args) != 1:
+        raise SchemeEvaluationError
+    cell = args[0]
+    if isinstance(cell, Pair):
+        return cell.car
+    raise SchemeEvaluationError
+
+
+def cdr_func(args):
+    if len(args) != 1:
+        raise SchemeEvaluationError
+    cell = args[0]
+    if isinstance(cell, Pair):
+        return cell.cdr
+    raise SchemeEvaluationError
+
+
+def list_func(args):
+    if len(args) == 0:
+        return Nil()
+    return cons_func([args[0], list_func(args[1:])])
+
+
+def is_list_func(args):
+    if len(args) != 1:
+        raise SchemeEvaluationError
+    obj = args[0]
+    if isinstance(obj, Nil):
+        return True
+    if not isinstance(obj, Pair):
+        return False
+    return is_list_helper(obj.cdr)
+
+
+def is_list_helper(list):
+    if isinstance(list, Nil):
+        return True
+    if not isinstance(list, Pair):
+        return False
+    return is_list_helper(list.cdr)
+
+
+def length_func(args):
+    if len(args) != 1:
+        raise SchemeEvaluationError
+    obj = args[0]
+    if not is_list_helper(obj):
+        raise SchemeEvaluationError
+
+    def inner(list):
+        if isinstance(list, Nil):
+            return 0
+        return 1 + inner(list.cdr)
+    return inner(obj)
+
+
+def list_ref_func(args):
+    if len(args) != 2:
+        raise SchemeEvaluationError
+    list, index = args[0], args[1]
+    if not is_list_helper(list):
+        if isinstance(list, Pair):
+            if index == 0:
+                return list.car
+            raise SchemeEvaluationError
+        raise SchemeEvaluationError
+    if index < 0:
+        raise SchemeEvaluationError
+
+    def inner(list, index):
+        if isinstance(list, Nil) and index >= 0:
+            raise SchemeEvaluationError
+        if index == 0:
+            return list.car
+        return inner(list.cdr, index - 1)
+    return inner(list, index)
+
+
+def append_func(args):
+    if len(args) == 0:
+        return Nil()
+    items = []
+    for list in args:
+        if not is_list_helper(list):
+            raise SchemeEvaluationError
+        if isinstance(list, Pair):
+            car, cdr = list.car, list.cdr
+            items.append(car)
+            while isinstance(cdr, Pair):
+                car, cdr = cdr.car, cdr.cdr
+                items.append(car)
+    return list_func(items)
+
+
 scheme_builtins = {
     "+": sum,
     "-": lambda args: -args[0] if len(args) == 1 else (args[0] - sum(args[1:])),
@@ -197,6 +325,14 @@ scheme_builtins = {
     ">=": ge,
     "<=": le,
     "not": not_func,
+    "cons": cons_func,
+    "car": car_func,
+    "cdr": cdr_func,
+    "list": list_func,
+    "list?": is_list_func,
+    "length": length_func,
+    "list-ref": list_ref_func,
+    "append": append_func,
 }
 
 
@@ -243,6 +379,12 @@ class Functions:
     def __repr__(self) -> str:
         return "function object"
 
+def evaluate_file(file):
+    with open(file) as f:
+        source = ""
+        for line in iter(f.readline, ""):
+            source += line
+        return evaluate(parse(tokenize(source)))
 
 def evaluate(tree, frame=None):
     """
@@ -262,6 +404,8 @@ def evaluate(tree, frame=None):
         return value
     if not isinstance(tree, list):
         return tree
+    if len(tree) < 1:
+        raise SchemeEvaluationError
     op, rest = tree[0], tree[1:]
     if op == 'define':
         if len(rest) != 2:
@@ -303,6 +447,11 @@ def evaluate(tree, frame=None):
             if evaluate(cond, frame):
                 return True
         return False
+    if op == "begin":
+        value = None
+        for exp in rest:
+            value = evaluate(exp, frame)
+        return value
     func = evaluate(op, frame)
     if not hasattr(func, '__call__'):
         raise SchemeEvaluationError
@@ -364,7 +513,6 @@ def repl(raise_all=False):
                 raise
             print(f"{e.__class__.__name__}:", *e.args)
         print()
-
 
 if __name__ == "__main__":
     # code in this block will only be executed if lab.py is the main file being
