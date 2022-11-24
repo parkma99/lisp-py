@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import doctest
-
+import sys
 # NO ADDITIONAL IMPORTS!
 
 
@@ -379,12 +379,14 @@ class Functions:
     def __repr__(self) -> str:
         return "function object"
 
-def evaluate_file(file):
+
+def evaluate_file(file, frame=None):
     with open(file) as f:
         source = ""
         for line in iter(f.readline, ""):
             source += line
-        return evaluate(parse(tokenize(source)))
+        return evaluate(parse(tokenize(source)), frame)
+
 
 def evaluate(tree, frame=None):
     """
@@ -470,8 +472,7 @@ def result_and_frame(tree, frame=None):
 ########
 
 
-def repl(raise_all=False):
-    global_frame = None
+def repl(raise_all=False, global_frame = None):
     while True:
         # read the input.  pressing ctrl+d exits, as does typing "EXIT" at the
         # prompt.  pressing ctrl+c moves on to the next prompt, ignoring
@@ -514,11 +515,16 @@ def repl(raise_all=False):
             print(f"{e.__class__.__name__}:", *e.args)
         print()
 
+
 if __name__ == "__main__":
     # code in this block will only be executed if lab.py is the main file being
     # run (not when this module is imported)
 
     # uncommenting the following line will run doctests from above
     # doctest.testmod()
-
-    repl(True)
+    print(sys.argv)
+    global_frame = Frame(init_frame)
+    if len(sys.argv) > 1:
+        for file in sys.argv[1:]:
+            evaluate_file(file, global_frame)
+    repl(True, global_frame)
