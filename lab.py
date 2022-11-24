@@ -2,6 +2,7 @@
 
 import doctest
 import sys
+sys.setrecursionlimit(1000000)
 # NO ADDITIONAL IMPORTS!
 
 
@@ -259,7 +260,12 @@ def is_list_helper(list):
         return True
     if not isinstance(list, Pair):
         return False
-    return is_list_helper(list.cdr)
+    cdr = list.cdr
+    while isinstance(cdr, Pair):
+        cdr = cdr.cdr
+    if isinstance(cdr, Nil):
+        return True
+    return False
 
 
 def length_func(args):
@@ -292,9 +298,13 @@ def list_ref_func(args):
     def inner(list, index):
         if isinstance(list, Nil) and index >= 0:
             raise SchemeEvaluationError
+        while index > 0:
+            index -= 1
+            list = list.cdr
+            if isinstance(list, Nil) and index >= 0:
+                raise SchemeEvaluationError
         if index == 0:
             return list.car
-        return inner(list.cdr, index - 1)
     return inner(list, index)
 
 
