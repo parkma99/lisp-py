@@ -70,6 +70,10 @@ def number_or_symbol(x):
         try:
             return float(x)
         except ValueError:
+            if x == "#t":
+                return True
+            if x == "#f":
+                return False
             return x
 
 
@@ -139,14 +143,60 @@ def div(args):
     if len(args) == 0:
         raise SchemeEvaluationError
     if len(args) == 1:
-        return 1/ args[0]
-    return args[0]/ mult(args[1:])
+        return 1 / args[0]
+    return args[0] / mult(args[1:])
+
+
+def op_helper(args, cmp):
+    if len(args) <= 1:
+        raise SchemeEvaluationError
+    pre = args[0]
+    for cur in args[1:]:
+        if cmp(pre, cur):
+            return False
+        pre = cur
+    return True
+
+
+def gt(args):
+    return op_helper(args, lambda a, b: a <= b)
+
+
+def lt(args):
+    return op_helper(args, lambda a, b: a >= b)
+
+
+def ge(args):
+    return op_helper(args, lambda a, b: a < b)
+
+
+def le(args):
+    return op_helper(args, lambda a, b: a > b)
+
+
+def equal(args):
+    return op_helper(args, lambda a, b: a != b)
+
+
+def not_func(args):
+    if len(args) != 1:
+        raise SchemeEvaluationError
+    if args[0]:
+        return False
+    return True
+
 
 scheme_builtins = {
     "+": sum,
     "-": lambda args: -args[0] if len(args) == 1 else (args[0] - sum(args[1:])),
     "*": mult,
-    "/": div
+    "/": div,
+    "equal?": equal,
+    ">": gt,
+    "<": lt,
+    ">=": ge,
+    "<=": le,
+    "not": not_func,
 }
 
 
@@ -158,16 +208,17 @@ class Frame:
     def __init__(self, parent=None) -> None:
         self.map = {}
         self.parent = parent
-    
+
     def add(self, key, value):
         self.map[key] = value
-    
+
     def get(self, key):
         if key in self.map:
             return self.map[key]
         if self.parent is None:
             return None
         return self.parent.get(key)
+
 
 init_frame = Frame()
 for k, v in scheme_builtins.items():
@@ -179,17 +230,20 @@ class Functions:
         self.body = body
         self.parameters = parameters
         self.frame = frame
+
     def __call__(self, args):
         if len(args) != len(self.parameters):
             raise SchemeEvaluationError
-        
+
         function_frame = Frame(self.frame)
         for key, value in zip(self.parameters, args):
             function_frame.add(key, value)
         return evaluate(self.body, function_frame)
+
     def __repr__(self) -> str:
         return "function object"
-        
+
+
 def evaluate(tree, frame=None):
     """
     Evaluate the given syntax tree according to the rules of the Scheme
@@ -229,11 +283,32 @@ def evaluate(tree, frame=None):
         parameters = rest[0]
         body = rest[1]
         return Functions(parameters, body, frame)
+    if op == "if":
+        if len(rest) != 3:
+            raise SchemeEvaluationError
+        cond = rest[0]
+        true_exp = rest[1]
+        false_exp = rest[2]
+        if evaluate(cond, frame):
+            return evaluate(true_exp, frame)
+        else:
+            return evaluate(false_exp, frame)
+    if op == "and":
+        for cond in rest:
+            if not evaluate(cond, frame):
+                return False
+        return True
+    if op == "or":
+        for cond in rest:
+            if evaluate(cond, frame):
+                return True
+        return False
     func = evaluate(op, frame)
     if not hasattr(func, '__call__'):
         raise SchemeEvaluationError
     args = [evaluate(arg, frame) for arg in rest]
     return func(args)
+
 
 def result_and_frame(tree, frame=None):
     if frame is None:
@@ -244,6 +319,7 @@ def result_and_frame(tree, frame=None):
 ########
 # REPL #
 ########
+
 
 def repl(raise_all=False):
     global_frame = None
@@ -288,6 +364,7 @@ def repl(raise_all=False):
                 raise
             print(f"{e.__class__.__name__}:", *e.args)
         print()
+
 
 if __name__ == "__main__":
     # code in this block will only be executed if lab.py is the main file being
