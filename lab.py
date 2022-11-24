@@ -355,6 +355,23 @@ class Frame:
             return None
         return self.parent.get(key)
 
+    def find(self, key):
+        if key in self.map:
+            return True
+        return False
+
+    def delete(self, key):
+        value = self.map[key]
+        self.map.pop(key)
+        return value
+
+    def update(self, key, value):
+        if key in self.map:
+            self.map[key] = value
+            return
+        if self.parent is not None:
+            self.parent.update(key, value)
+
 
 init_frame = Frame()
 for k, v in scheme_builtins.items():
@@ -454,6 +471,37 @@ def evaluate(tree, frame=None):
         for exp in rest:
             value = evaluate(exp, frame)
         return value
+    if op == "del":
+        if len(rest) != 1:
+            raise SchemeEvaluationError
+        key = rest[0]
+        if frame.find(key):
+            return frame.delete(key)
+        raise SchemeNameError
+    if op == "let":
+        if len(rest) != 2:
+            raise SchemeEvaluationError
+        body = rest[1]
+        inner_frame = Frame(frame)
+        for item in rest[0]:
+            if len(item) != 2:
+                raise SchemeEvaluationError
+            var = item[0]
+            val = evaluate(item[1], frame)
+            inner_frame.add(var, val)
+        return evaluate(body, inner_frame)
+    if op == "set!":
+        if len(rest) != 2:
+            raise SchemeEvaluationError
+        var = rest[0]
+        exp = rest[1]
+        value = frame.get(var)
+        if value is None:
+            raise SchemeNameError
+        value = evaluate(exp, frame)
+        frame.update(var, value)
+        return value
+
     func = evaluate(op, frame)
     if not hasattr(func, '__call__'):
         raise SchemeEvaluationError
@@ -472,7 +520,7 @@ def result_and_frame(tree, frame=None):
 ########
 
 
-def repl(raise_all=False, global_frame = None):
+def repl(raise_all=False, global_frame=None):
     while True:
         # read the input.  pressing ctrl+d exits, as does typing "EXIT" at the
         # prompt.  pressing ctrl+c moves on to the next prompt, ignoring
