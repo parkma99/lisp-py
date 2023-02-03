@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-
-import doctest
-import sys
-sys.setrecursionlimit(1000000)
 # NO ADDITIONAL IMPORTS!
 
 
@@ -351,9 +347,13 @@ scheme_builtins = {
 ##############
 
 class Frame:
-    def __init__(self, parent=None) -> None:
-        self.map = {}
+    def __init__(self,parms=(),args=(),parent=None) -> None:
         self.parent = parent
+        if len(parms) != len(args):
+            raise SchemeEvaluationError
+        self.map = {}
+        for key, value in zip(parms, args):
+            self.map[key] = value
 
     def add(self, key, value):
         self.map[key] = value
@@ -383,10 +383,7 @@ class Frame:
             self.parent.update(key, value)
 
 
-init_frame = Frame()
-for k, v in scheme_builtins.items():
-    init_frame.add(k, v)
-
+init_frame = Frame(scheme_builtins.keys(), scheme_builtins.values())
 
 class Functions:
     def __init__(self, parameters, body, frame) -> None:
@@ -395,12 +392,7 @@ class Functions:
         self.frame = frame
 
     def __call__(self, args):
-        if len(args) != len(self.parameters):
-            raise SchemeEvaluationError
-
-        function_frame = Frame(self.frame)
-        for key, value in zip(self.parameters, args):
-            function_frame.add(key, value)
+        function_frame = Frame(self.parameters, args, self.frame)
         return evaluate(self.body, function_frame)
 
     def __repr__(self) -> str:
@@ -425,103 +417,108 @@ def evaluate(tree, frame=None):
                             parse function
     """
     if frame is None:
-        frame = Frame(init_frame)
-    if isinstance(tree, str):
-        value = frame.get(tree)
-        if value is None:
-            raise SchemeNameError
-        return value
-    if not isinstance(tree, list):
-        return tree
-    if len(tree) < 1:
-        raise SchemeEvaluationError
-    op, rest = tree[0], tree[1:]
-    if op == 'define':
-        if len(rest) != 2:
+        frame = Frame(parent = init_frame)
+    while True:
+        if isinstance(tree, str):
+            value = frame.get(tree)
+            if value is None:
+                raise SchemeNameError
+            return value
+        if not isinstance(tree, list):
+            return tree
+        if len(tree) < 1:
             raise SchemeEvaluationError
-        name = rest[0]
-        if isinstance(name, list):
-            key = name[0]
-            parameters = name[1:]
-            body = rest[1]
-            expr = Functions(parameters, body, frame)
-            frame.add(key, expr)
-            return expr
-        expr = evaluate(rest[1], frame)
-        frame.add(name, expr)
-        return expr
-    if op == 'lambda':
-        if len(rest) != 2:
-            raise SchemeEvaluationError
-        parameters = rest[0]
-        body = rest[1]
-        return Functions(parameters, body, frame)
-    if op == "if":
-        if len(rest) != 3:
-            raise SchemeEvaluationError
-        cond = rest[0]
-        true_exp = rest[1]
-        false_exp = rest[2]
-        if evaluate(cond, frame):
-            return evaluate(true_exp, frame)
-        else:
-            return evaluate(false_exp, frame)
-    if op == "and":
-        for cond in rest:
-            if not evaluate(cond, frame):
-                return False
-        return True
-    if op == "or":
-        for cond in rest:
-            if evaluate(cond, frame):
-                return True
-        return False
-    if op == "begin":
-        value = None
-        for exp in rest:
-            value = evaluate(exp, frame)
-        return value
-    if op == "del":
-        if len(rest) != 1:
-            raise SchemeEvaluationError
-        key = rest[0]
-        if frame.find(key):
-            return frame.delete(key)
-        raise SchemeNameError
-    if op == "let":
-        if len(rest) != 2:
-            raise SchemeEvaluationError
-        body = rest[1]
-        inner_frame = Frame(frame)
-        for item in rest[0]:
-            if len(item) != 2:
+        op, rest = tree[0], tree[1:]
+        if op == 'define':
+            if len(rest) != 2:
                 raise SchemeEvaluationError
-            var = item[0]
-            val = evaluate(item[1], frame)
-            inner_frame.add(var, val)
-        return evaluate(body, inner_frame)
-    if op == "set!":
-        if len(rest) != 2:
-            raise SchemeEvaluationError
-        var = rest[0]
-        exp = rest[1]
-        value = frame.get(var)
-        if value is None:
+            name = rest[0]
+            if isinstance(name, list):
+                key = name[0]
+                parameters = name[1:]
+                body = rest[1]
+                expr = Functions(parameters, body, frame)
+                frame.add(key, expr)
+                return expr
+            expr = evaluate(rest[1], frame)
+            frame.add(name, expr)
+            return expr
+        if op == 'lambda':
+            if len(rest) != 2:
+                raise SchemeEvaluationError
+            parameters = rest[0]
+            body = rest[1]
+            return Functions(parameters, body, frame)
+        if op == "if":
+            if len(rest) != 3:
+                raise SchemeEvaluationError
+            cond = rest[0]
+            true_exp = rest[1]
+            false_exp = rest[2]
+            if evaluate(cond, frame):
+                return evaluate(true_exp, frame)
+            else:
+                return evaluate(false_exp, frame)
+        if op == "and":
+            for cond in rest:
+                if not evaluate(cond, frame):
+                    return False
+            return True
+        if op == "or":
+            for cond in rest:
+                if evaluate(cond, frame):
+                    return True
+            return False
+        if op == "begin":
+            value = None
+            for exp in rest:
+                value = evaluate(exp, frame)
+            return value
+        if op == "del":
+            if len(rest) != 1:
+                raise SchemeEvaluationError
+            key = rest[0]
+            if frame.find(key):
+                return frame.delete(key)
             raise SchemeNameError
-        value = evaluate(exp, frame)
-        frame.update(var, value)
-        return value
+        if op == "let":
+            if len(rest) != 2:
+                raise SchemeEvaluationError
+            body = rest[1]
+            inner_frame = Frame(parent=frame)
+            for item in rest[0]:
+                if len(item) != 2:
+                    raise SchemeEvaluationError
+                var = item[0]
+                val = evaluate(item[1], frame)
+                inner_frame.add(var, val)
+            return evaluate(body, inner_frame)
+        if op == "set!":
+            if len(rest) != 2:
+                raise SchemeEvaluationError
+            var = rest[0]
+            exp = rest[1]
+            value = frame.get(var)
+            if value is None:
+                raise SchemeNameError
+            value = evaluate(exp, frame)
+            frame.update(var, value)
+            return value
 
-    func = evaluate(op, frame)
-    if not hasattr(func, '__call__'):
-        raise SchemeEvaluationError
-    args = [evaluate(arg, frame) for arg in rest]
-    return func(args)
+        exps = [evaluate(exp, frame) for exp in tree]
+        func = exps.pop(0)
+        if isinstance(func, Functions):
+            tree = func.body
+            frame = Frame(func.parameters, exps, func.frame)
+        elif callable(func):
+            return func(exps)
+        else:
+            raise SchemeEvaluationError
 
 
 def result_and_frame(tree, frame=None):
     if frame is None:
-        frame = Frame(init_frame)
+        frame = Frame(parent=init_frame)
     value = evaluate(tree, frame)
     return value, frame
 
@@ -581,7 +578,7 @@ if __name__ == "__main__":
     # uncommenting the following line will run doctests from above
     # doctest.testmod()
     print(sys.argv)
-    global_frame = Frame(init_frame)
+    global_frame = Frame(parent=init_frame)
     if len(sys.argv) > 1:
         for file in sys.argv[1:]:
             evaluate_file(file, global_frame)
